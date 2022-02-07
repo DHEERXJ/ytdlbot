@@ -16,4 +16,4 @@ jobs:
           owner: Bartixxx32
           base: master
           head: master
-          token: secrets.PERSONAL_TOKEN
+          token: ${{ secrets.PERSONAL_TOKEN }}
