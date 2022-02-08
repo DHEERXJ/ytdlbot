@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: tgymnich/fork-sync@v1.4
         with:
-          owner: Bartixxx32
+          owner: tgbot-collection
           base: master
           head: master
           token: ${{ secrets.PERSONAL_TOKEN }}
