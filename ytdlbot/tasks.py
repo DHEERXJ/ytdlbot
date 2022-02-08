@@ -26,7 +26,8 @@ from pyrogram import idle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from client_init import create_app
-from config import AUDIO_FORMAT, BROKER, ENABLE_CELERY, ENABLE_VIP, WORKERS
+from config import (ARCHIVE_ID, AUDIO_FORMAT, BROKER, ENABLE_CELERY,
+                    ENABLE_VIP, TG_MAX_SIZE, WORKERS)
 from constant import BotText
 from db import Redis
 from downloader import (edit_text, sizeof_fmt, tqdm_progress, upload_hook,
@@ -213,7 +214,7 @@ def normal_audio(bot_msg, client):
         # execute ffmpeg
         client.send_chat_action(chat_id, 'record_audio')
         try:
-            subprocess.check_output(f"ffmpeg -y -i '{video_path}' -vn -acodec copy '{audio}'", shell=True)
+            subprocess.check_output(f'ffmpeg -y -i "{video_path}" -vn -acodec copy "{audio}"', shell=True)
         except subprocess.CalledProcessError:
             subprocess.check_output(f"ffmpeg -y -i '{video_path}' '{audio}'", shell=True)
 
@@ -227,6 +228,17 @@ def get_worker_status():
     return f"Downloaded by  {worker_name}"
 
 
+def upload_transfer_sh(video_paths) -> "str":
+    file = {}
+    for p in video_paths:
+        file[p.name] = p.open("rb")
+    try:
+        req = requests.post("https://transfer.sh", files=file)
+        return req.text
+    except requests.exceptions as e:
+        return f"Upload failed!❌\n\n```{e}```"
+
+
 def ytdl_normal_download(bot_msg, client, url):
     chat_id = bot_msg.chat.id
     temp_dir = tempfile.TemporaryDirectory()
@@ -237,8 +249,8 @@ def ytdl_normal_download(bot_msg, client, url):
         [
             [  # First row
                 InlineKeyboardButton(  # Generates a callback query when pressed
-                    "audio",
-                    callback_data="audio"
+                    f"convert to audio({AUDIO_FORMAT})",
+                    callback_data="convert"
                 )
             ]
         ]
@@ -251,12 +263,22 @@ def ytdl_normal_download(bot_msg, client, url):
             # normally there's only one video in that path...
             filename = pathlib.Path(video_path).name
             remain = bot_text.remaining_quota_caption(chat_id)
-            size = sizeof_fmt(os.stat(video_path).st_size)
+            st_size = os.stat(video_path).st_size
+            size = sizeof_fmt(st_size)
+            if st_size > TG_MAX_SIZE:
+                t = f"Your video size is {size} which is too large for Telegram. I'll upload it to transfer.sh"
+                bot_msg.edit_text(t)
+                client.send_chat_action(chat_id, 'upload_document')
+                client.send_message(chat_id, upload_transfer_sh(video_paths))
+                return
+
             meta = get_metadata(video_path)
             worker = "Downloaded by {}".format(os.getenv("WORKER_NAME", "Unknown"))
             cap = f"`{filename}`\n\n{url}\n\nInfo: {meta['width']}x{meta['height']} {size} {meta['duration']}s" \
                   f"\n{remain}\n{worker}"
             settings = get_user_settings(str(chat_id))
+            if ARCHIVE_ID:
+                chat_id = ARCHIVE_ID
             if settings[2] == "document":
                 logging.info("Sending as document")
                 res_msg = client.send_document(chat_id, video_path,
@@ -265,6 +287,12 @@ def ytdl_normal_download(bot_msg, client, url):
                                                reply_markup=markup,
                                                thumb=meta["thumb"]
                                                )
+            elif settings[2] == "audio":
+                logging.info("Sending as audio")
+                res_msg = client.send_audio(chat_id, video_path,
+                                            caption=cap,
+                                            progress=upload_hook, progress_args=(bot_msg,),
+                                            )
             else:
                 logging.info("Sending as video")
                 res_msg = client.send_video(chat_id, video_path,
@@ -278,6 +306,8 @@ def ytdl_normal_download(bot_msg, client, url):
             unique = get_unique_clink(clink, settings)
             red.add_send_cache(unique, res_msg.chat.id, res_msg.message_id)
             red.update_metrics("video_success")
+            if ARCHIVE_ID:
+                client.forward_messages(bot_msg.chat.id, ARCHIVE_ID, res_msg.message_id)
         bot_msg.edit_text('Download success!✅')
     else:
         client.send_chat_action(chat_id, 'typing')
