@@ -171,6 +171,14 @@ def terms_handler(client: "Client", message: "types.Message"):
     client.send_message(chat_id, bot_text.terms)
 
 
+@app.on_message(filters.command(["sub_count"]))
+def sub_count_handler(client: "Client", message: "types.Message"):
+    username = message.from_user.username
+    chat_id = message.chat.id
+    if username == OWNER:
+        client.send_message(chat_id, VIP().sub_count())
+
+
 @app.on_message(filters.command(["direct"]))
 def direct_handler(client: "Client", message: "types.Message"):
     chat_id = message.from_user.id
@@ -249,7 +257,7 @@ def download_handler(client: "Client", message: "types.Message"):
 
     red.update_metrics("video_request")
     text = bot_text.get_receive_link_text()
-    time.sleep(random.random() * 2)
+    time.sleep(random.random() / 2)
     try:
         # raise pyrogram.errors.exceptions.FloodWait(10)
         bot_msg: typing.Union["types.Message", "typing.Any"] = message.reply_text(text, quote=True)
@@ -302,8 +310,8 @@ def periodic_sub_check():
         if video_url:
             logging.info(f"periodic update:{video_url} - {uids}")
             for uid in uids:
-                # TODO can we send and forward?
-                app.send_message(uid, video_url)
+                bot_msg = app.send_message(uid, f"{video_url} is downloading...", disable_web_page_preview=True)
+                ytdl_download_entrance(bot_msg, app, video_url)
                 time.sleep(random.random())
 
 

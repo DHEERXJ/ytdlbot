@@ -2,7 +2,7 @@ version: '3.1'
 
 services:
   socat:
-    image: jmb12686/socat
+    image: bennythink/socat
     restart: always
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -15,7 +15,7 @@ services:
       driver: none
 
   mysql:
-    image: mysql:5.7
+    image: ubuntu/mysql:8.0-20.04_beta
     restart: always
     volumes:
       - ./db_data:/var/lib/mysql
