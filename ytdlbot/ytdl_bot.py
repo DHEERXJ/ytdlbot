@@ -138,8 +138,8 @@ def patch_handler(client: "Client", message: "types.Message"):
     if username == OWNER:
         celery_app.control.broadcast("hot_patch")
         client.send_chat_action(chat_id, "typing")
-        client.send_message(chat_id, "Oorah!")
         hot_patch()
+        client.send_message(chat_id, "Oorah!")
 
 
 @app.on_message(filters.command(["ping"]))
@@ -151,8 +151,8 @@ def ping_handler(client: "Client", message: "types.Message"):
     else:
         bot_info = get_runtime("ytdlbot_ytdl_1", "YouTube-dl")
     if message.chat.username == OWNER:
-        stats = bot_text.queue_stats()
-        client.send_document(chat_id, Redis().generate_file(), caption=f"{bot_info}\n{stats}")
+        stats = bot_text.ping_worker()
+        client.send_document(chat_id, Redis().generate_file(), caption=f"{bot_info}\n\n{stats}")
     else:
         client.send_message(chat_id, f"{bot_info}")
 

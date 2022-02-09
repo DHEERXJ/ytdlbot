@@ -11,16 +11,17 @@ import time
 
 from config import (AFD_LINK, COFFEE_LINK, ENABLE_CELERY, ENABLE_VIP, EX,
                     MULTIPLY, REQUIRED_MEMBERSHIP, USD2CNY)
+from db import InfluxDB
 from downloader import sizeof_fmt
 from limit import QUOTA, VIP
-from utils import get_func_queue, get_queue_stat
+from utils import get_func_queue
 
 
 class BotText:
     start = "Welcome to YouTube Download bot. Type /help for more information."
 
     help = f"""
-1. This bot should works at all times. If it doesn't, try to send the link again or DM @Bartixxx
+1. This bot should works at all times. If it doesn't, try to send the link again or DM @BennyThink
 
 2. At this time of writing, this bot consumes hundreds of GigaBytes of network traffic per day. 
 In order to avoid being abused, 
@@ -31,9 +32,9 @@ every one can use this bot within **{sizeof_fmt(QUOTA)} of quota for every {int(
 4. You can optionally choose to become 'VIP' user if you need more traffic. Type /vip for more information.
 
 5. Source code for this bot will always stay open, here-> https://github.com/tgbot-collection/ytdlbot
-    """ if ENABLE_VIP else "Just send me url for video and im gonna download it for you, you can also tweak /settings if you want to :)"
+    """ if ENABLE_VIP else "Just send me link to download :P if you want you can tweak settings using /settings"
 
-    about = "Youtube-DL Bot hosted by @Bartixxx made by BennyThink"
+    about = "YouTube-DL by @BennyThink. Open source on GitHub: https://github.com/tgbot-collection/ytdlbot"
 
     terms = f"""
 1. You can use this service, free of charge, {sizeof_fmt(QUOTA)} per {int(EX / 3600)} hours.
@@ -116,11 +117,6 @@ Sending format: **{1}**
             return ""
 
     @staticmethod
-    def queue_stats():
-        _, _, _, stats = get_queue_stat()
-        return stats
-
-    @staticmethod
     def get_receive_link_text():
         reserved = get_func_queue("reserved")
         if ENABLE_CELERY and reserved:
@@ -129,3 +125,17 @@ Sending format: **{1}**
             text = "Your task was added to active queue.\nProcessing...\n\n"
 
         return text
+
+    @staticmethod
+    def ping_worker():
+        workers = InfluxDB().extract_dashboard_data()
+        text = ""
+        for worker in workers:
+            fields = worker["fields"]
+            hostname = worker["tags"]["hostname"]
+            status = {True: "✅"}.get(fields["status"], "❌")
+            active = fields["active"]
+            load = "{},{},{}".format(fields["load1"], fields["load5"], fields["load15"])
+            text += f"{status}{hostname} **{active}** {load}\n"
+        return text
+
