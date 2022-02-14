@@ -7,6 +7,7 @@
 
 __author__ = "Benny <benny.think@gmail.com>"
 
+import json
 import logging
 import os
 import pathlib
@@ -35,7 +36,7 @@ from downloader import (edit_text, sizeof_fmt, tqdm_progress, upload_hook,
                         ytdl_download)
 from limit import VIP
 from utils import (apply_log_formatter, auto_restart, customize_logger,
-                   get_metadata, get_user_settings)
+                   get_metadata, get_revision, get_user_settings)
 
 customize_logger(["pyrogram.client", "pyrogram.session.session", "pyrogram.connection.connection"])
 apply_log_formatter()
@@ -97,24 +98,27 @@ def forward_video(chat_id, url, client):
     clink = vip.extract_canonical_link(url)
     unique = get_unique_clink(clink, settings)
 
-    data = red.get_send_cache(unique)
-    if not data:
+    cache = red.get_send_cache(unique)
+    if not cache:
         return False
 
-    for uid, mid in data.items():
-        uid, mid = int(uid), int(mid)
+    for uid, mid in cache.items():
+        uid, mid = int(uid), json.loads(mid)
         try:
-            result_msg = client.get_messages(uid, mid)
-            logging.info("Forwarding message from %s %s %s to %s", clink, uid, mid, chat_id)
-            m = result_msg.forward(chat_id)
+            fwd_msg = client.forward_messages(chat_id, uid, mid)
+            if not fwd_msg:
+                raise ValueError("Failed to forward message")
             red.update_metrics("cache_hit")
-            if ENABLE_VIP:
-                file_size = getattr(result_msg.document, "file_size", None) or \
-                            getattr(result_msg.video, "file_size", 1024)
-                # TODO: forward file size may exceed the limit
-                vip.use_quota(chat_id, file_size)
-            red.add_send_cache(unique, chat_id, m.message_id)
+            if not isinstance(fwd_msg, list):
+                fwd_msg = [fwd_msg]
+            for fwd in fwd_msg:
+                if ENABLE_VIP:
+                    file_size = getattr(fwd.document, "file_size", None) or getattr(fwd.video, "file_size", 1024)
+                    # TODO: forward file size may exceed the limit
+                    vip.use_quota(chat_id, file_size)
+                red.add_send_cache(unique, chat_id, fwd.message_id)
             return True
+
         except Exception as e:
             logging.error("Failed to forward message %s", e)
             red.del_send_cache(unique, uid)
@@ -322,22 +326,29 @@ def ytdl_normal_download(bot_msg, client, url):
 
 
 @Panel.register
-def hot_patch(*args):
-    git_path = pathlib.Path().cwd().parent
-    logging.info("Hot patching on path %s...", git_path)
+def ping_revision(*args):
+    return get_revision()
 
+
+@Panel.register
+def hot_patch(*args):
+    app_path = pathlib.Path().cwd().parent
+    logging.info("Hot patching on path %s...", app_path)
+
+    apk_install = "xargs apk add  < apk.txt"
     pip_install = "pip install -r requirements.txt"
     unset = "git config --unset http.https://github.com/.extraheader"
     pull_unshallow = "git pull origin --unshallow"
     pull = "git pull"
 
-    subprocess.call(pip_install, shell=True, cwd=git_path)
-    subprocess.call(unset, shell=True, cwd=git_path)
-    if subprocess.call(pull_unshallow, shell=True, cwd=git_path) != 0:
+    subprocess.call(unset, shell=True, cwd=app_path)
+    if subprocess.call(pull_unshallow, shell=True, cwd=app_path) != 0:
         logging.info("Already unshallow, pulling now...")
-        subprocess.call(pull, shell=True, cwd=git_path)
+        subprocess.call(pull, shell=True, cwd=app_path)
 
     logging.info("Code is updated, applying hot patch now...")
+    subprocess.call(apk_install, shell=True, cwd=app_path)
+    subprocess.call(pip_install, shell=True, cwd=app_path)
     psutil.Process().kill()
 
 
