@@ -10,14 +10,12 @@ __author__ = "Benny <benny.think@gmail.com>"
 import base64
 import contextlib
 import datetime
-import json
 import logging
 import os
 import re
 import subprocess
 import time
 from io import BytesIO
-from unittest.mock import MagicMock
 
 import fakeredis
 import pymysql
@@ -27,6 +25,7 @@ from beautifultable import BeautifulTable
 from influxdb import InfluxDBClient
 
 from config import MYSQL_HOST, MYSQL_PASS, MYSQL_USER, QUOTA, REDIS
+from fakemysql import FakeMySQL
 
 
 class Redis:
@@ -141,21 +140,14 @@ class Redis:
         file.name = f"{date}.txt"
         return file
 
-    def add_send_cache(self, unique, uid, mid):
-        # unique: video_url+resolution+send_type
-        # value in redis [uid1,uid2]
-        values = []
-        v = self.r.hget(unique, uid)
-        if v:
-            values = json.loads(v)
-        values.append(mid)
-        self.r.hset(unique, uid, json.dumps(values))
+    def add_send_cache(self, unique, file_id):
+        self.r.hset("cache", unique, file_id)
 
-    def get_send_cache(self, unique) -> "dict":
-        return self.r.hgetall(unique)
+    def get_send_cache(self, unique) -> "str":
+        return self.r.hget("cache", unique)
 
-    def del_send_cache(self, unique, uid):
-        self.r.hdel(unique, uid)
+    def del_send_cache(self, unique):
+        self.r.hdel("cache", unique)
 
 
 class MySQL:
@@ -212,7 +204,7 @@ class MySQL:
             self.con = pymysql.connect(host=MYSQL_HOST, user=MYSQL_USER, passwd=MYSQL_PASS, db="ytdl",
                                        charset="utf8mb4")
         else:
-            self.con = MagicMock()
+            self.con = FakeMySQL()
 
         self.cur = self.con.cursor()
         self.init_db()
