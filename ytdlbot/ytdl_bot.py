@@ -85,7 +85,8 @@ def start_handler(client: "Client", message: "types.Message"):
     client.send_chat_action(from_id, "typing")
     greeting = bot_text.get_vip_greeting(from_id)
     quota = bot_text.remaining_quota_caption(from_id)
-    text = f"{greeting}{bot_text.start}\n\n{quota}"
+    custom_text = bot_text.custom_text
+    text = f"{greeting}{bot_text.start}\n\n{quota}\n{custom_text}"
 
     client.send_message(message.chat.id, text)
 
@@ -266,7 +267,6 @@ def download_handler(client: "Client", message: "types.Message"):
 
     red.update_metrics("video_request")
     text = bot_text.get_receive_link_text()
-    time.sleep(random.random() / 2)
     try:
         # raise pyrogram.errors.exceptions.FloodWait(10)
         bot_msg: typing.Union["types.Message", "typing.Any"] = message.reply_text(text, quote=True)
@@ -308,8 +308,8 @@ def audio_callback(client: "Client", callback_query: types.CallbackQuery):
     callback_query.answer(f"Converting to audio...please wait patiently")
     Redis().update_metrics("audio_request")
 
-    msg = callback_query.message
-    audio_entrance(msg, client)
+    vmsg = callback_query.message
+    audio_entrance(vmsg, client)
 
 
 @app.on_callback_query(filters.regex(r"Local|Celery"))

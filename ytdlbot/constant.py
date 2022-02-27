@@ -7,6 +7,7 @@
 
 __author__ = "Benny <benny.think@gmail.com>"
 
+import os
 import time
 
 from config import (AFD_LINK, COFFEE_LINK, ENABLE_CELERY, ENABLE_VIP, EX,
@@ -32,9 +33,9 @@ every one can use this bot within **{sizeof_fmt(QUOTA)} of quota for every {int(
 4. You can optionally choose to become 'VIP' user if you need more traffic. Type /vip for more information.
 
 5. Source code for this bot will always stay open, here-> https://github.com/tgbot-collection/ytdlbot
-    """ if ENABLE_VIP else "Just send me link to download :P if you want you can tweak settings using /settings"
+    """ if ENABLE_VIP else "Help text"
 
-    about = "YouTube-DL by @BennyThink. Open source on GitHub: https://github.com/tgbot-collection/ytdlbot"
+    about = "Just send me link to download :P if you want you can tweak settings using /settings"
 
     terms = f"""
 1. You can use this service, free of charge, {sizeof_fmt(QUOTA)} per {int(EX / 3600)} hours.
@@ -91,6 +92,7 @@ Your current settings:
 Video quality: **{0}**
 Sending format: **{1}**
 """
+    custom_text = os.getenv("CUSTOM_TEXT", "")
 
     def remaining_quota_caption(self, chat_id):
         if not ENABLE_VIP:
