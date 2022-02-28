@@ -33,7 +33,7 @@ every one can use this bot within **{sizeof_fmt(QUOTA)} of quota for every {int(
 4. You can optionally choose to become 'VIP' user if you need more traffic. Type /vip for more information.
 
 5. Source code for this bot will always stay open, here-> https://github.com/tgbot-collection/ytdlbot
-    """ if ENABLE_VIP else "Help text"
+    """ if ENABLE_VIP else "Just send me link to download :P if you want you can tweak settings using /settings"
 
     about = "Just send me link to download :P if you want you can tweak settings using /settings"
 
