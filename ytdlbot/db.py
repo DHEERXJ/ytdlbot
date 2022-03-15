@@ -147,7 +147,7 @@ class Redis:
         return self.r.hget("cache", unique)
 
     def del_send_cache(self, unique):
-        self.r.hdel("cache", unique)
+        return self.r.hdel("cache", unique)
 
 
 class MySQL:
@@ -195,7 +195,8 @@ class MySQL:
     create table if not exists subscribe
     (
         user_id    bigint       null,
-        channel_id varchar(256) null
+        channel_id varchar(256) null,
+        is_valid boolean default 1 null
     ) CHARSET=utf8mb4;
     """
 
@@ -298,6 +299,9 @@ class InfluxDB:
         self.client.write_points(json_body)
 
     def collect_data(self):
+        if os.getenv("INFLUX_HOST") is None:
+            return
+
         with contextlib.suppress(Exception):
             self.data = self.get_worker_data()
             self.__fill_worker_data()

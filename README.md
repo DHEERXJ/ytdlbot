@@ -99,7 +99,7 @@ vim env/ytdl.env
 you can configure all the following environment variables:
 
 * PYRO_WORKERS: number of workers for pyrogram, default is 100
-* WORKERS: workers count for celery,it'll be doubled.
+* WORKERS: workers count for celery
 * APP_ID: **REQUIRED**, get it from https://core.telegram.org/
 * APP_HASH: **REQUIRED**
 * TOKEN: **REQUIRED**
@@ -238,6 +238,7 @@ direct - Download file directly
 sub - Subscribe to YouTube Channel
 unsub - Unsubscribe from YouTube Channel
 sub_count - Check subscription status, owner only.
+uncache - Delete cache for this link
 ```
 
 # Test data

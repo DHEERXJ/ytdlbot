@@ -49,7 +49,7 @@ logging.getLogger('apscheduler.executors.default').propagate = False
 # app = Celery('celery', broker=BROKER, accept_content=['pickle'], task_serializer='pickle')
 app = Celery('tasks', broker=BROKER)
 
-celery_client = create_app()
+celery_client = create_app(":memory:")
 
 
 def get_messages(chat_id, message_id):
@@ -118,6 +118,7 @@ def forward_video(url, client, bot_msg):
             vip.use_quota(chat_id, file_size)
         caption, _ = gen_cap(bot_msg, url, obj)
         res_msg.edit_text(caption, reply_markup=gen_video_markup())
+        bot_msg.edit_text(f"Download success!✅✅✅")
         red.update_metrics("cache_hit")
         return True
 
@@ -205,33 +206,22 @@ def direct_normal_download(bot_msg, client, url):
                              caption=f"filesize: {sizeof_fmt(st_size)}",
                              progress=upload_hook, progress_args=(bot_msg,),
                              )
-        bot_msg.edit_text(f"Download success!✅")
+        bot_msg.edit_text("Download success!✅")
 
 
 def normal_audio(bot_msg, client):
     chat_id = bot_msg.chat.id
-    fn = getattr(bot_msg.video, "file_name", None) or getattr(bot_msg.document, "file_name", None)
+    # fn = getattr(bot_msg.video, "file_name", None) or getattr(bot_msg.document, "file_name", None)
     status_msg = bot_msg.reply_text("Converting to audio...please wait patiently", quote=True)
+    orig_url: "str" = re.findall(r"http[s]://.*", bot_msg.caption)[0]
     with tempfile.TemporaryDirectory(prefix="ytdl-") as tmp:
-        logging.info("downloading to %s", tmp)
-        base_path = pathlib.Path(tmp)
-        video_path = base_path.joinpath(fn)
-        audio = base_path.joinpath(fn).with_suffix(f".{AUDIO_FORMAT}")
-        client.send_chat_action(chat_id, 'record_video_note')
-        status_msg.edit_text("Preparing your conversion....")
-        client.download_media(bot_msg, video_path)
-        logging.info("downloading complete %s", video_path)
-        # execute ffmpeg
         client.send_chat_action(chat_id, 'record_audio')
-        try:
-            run_ffmpeg(["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "copy", audio], status_msg)
-        except subprocess.CalledProcessError:
-            # CPU consuming if re-encoding.
-            run_ffmpeg(["ffmpeg", "-y", "-i", video_path, audio], status_msg)
-
+        # just try to download the audio using yt-dlp
+        resp = ytdl_download(orig_url, tmp, status_msg, hijack="bestaudio[ext=m4a]")
         status_msg.edit_text("Sending audio now...")
         client.send_chat_action(chat_id, 'upload_audio')
-        client.send_audio(chat_id, audio)
+        for f in resp["filepath"]:
+            client.send_audio(chat_id, f)
         status_msg.edit_text("✅ Conversion complete.")
         Redis().update_metrics("audio_success")
 
@@ -361,7 +351,7 @@ def gen_video_markup():
         [
             [  # First row
                 InlineKeyboardButton(  # Generates a callback query when pressed
-                    f"convert to audio({AUDIO_FORMAT})",
+                    "convert to audio",
                     callback_data="convert"
                 )
             ]

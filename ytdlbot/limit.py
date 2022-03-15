@@ -107,17 +107,18 @@ class VIP(Redis, MySQL):
     @staticmethod
     def extract_canonical_link(url):
         # canonic link works for many websites. It will strip out unnecessary stuff
+        proxy = {"https": os.getenv("YTDL_PROXY")} if os.getenv("YTDL_PROXY") else None
         props = ["canonical", "alternate", "shortlinkUrl"]
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.163 Safari/537.36"}
         # send head request first
-        r = requests.head(url, headers=headers)
-        if r.status_code != http.HTTPStatus.METHOD_NOT_ALLOWED and r.headers.get("content-type") != "text/html":
+        r = requests.head(url, headers=headers, proxies=proxy)
+        if r.status_code != http.HTTPStatus.METHOD_NOT_ALLOWED and "text/html" not in r.headers.get("content-type"):
             # get content-type, if it's not text/html, there's no need to issue a GET request
             logging.warning("%s Content-type is not text/html, no need to GET for extract_canonical_link", url)
             return url
 
-        html_doc = requests.get(url, headers=headers, timeout=5).text
+        html_doc = requests.get(url, headers=headers, timeout=5, proxies=proxy).text
         soup = BeautifulSoup(html_doc, "html.parser")
         for prop in props:
             element = soup.find("link", rel=prop)
@@ -187,13 +188,17 @@ class VIP(Redis, MySQL):
 
     def group_subscriber(self):
         # {"channel_id": [user_id, user_id, ...]}
-        self.cur.execute("select * from subscribe")
+        self.cur.execute("select * from subscribe where is_valid=1")
         data = self.cur.fetchall()
         group = {}
         for item in data:
             group.setdefault(item[1], []).append(item[0])
-        logging.info("Checking peroidic subscriber...")
+        logging.info("Checking periodic subscriber...")
         return group
+
+    def deactivate_user_subscription(self, user_id: "int"):
+        self.cur.execute("UPDATE subscribe set is_valid=0 WHERE user_id=%s", (user_id,))
+        self.con.commit()
 
     def sub_count(self):
         sql = """
@@ -206,6 +211,15 @@ class VIP(Redis, MySQL):
         for item in data:
             text += "{} ==> [{}]({})\n".format(*item)
         return text
+
+    def del_cache(self, user_link: "str"):
+        unique = self.extract_canonical_link(user_link)
+        caches = self.r.hgetall("cache")
+        count = 0
+        for key in caches:
+            if key.startswith(unique):
+                count += self.del_send_cache(key)
+        return count
 
 
 class BuyMeACoffee:
