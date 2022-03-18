@@ -23,9 +23,9 @@ import ffpb
 import filetype
 import yt_dlp as ytdl
 from tqdm import tqdm
+from yt_dlp import DownloadError
 
-from config import (AUDIO_FORMAT, ENABLE_FFMPEG, ENABLE_VIP, MAX_DURATION,
-                    TG_MAX_SIZE, IPv6)
+from config import AUDIO_FORMAT, ENABLE_VIP, MAX_DURATION, TG_MAX_SIZE
 from db import Redis
 from limit import VIP
 from utils import (adjust_formats, apply_log_formatter, current_time,
@@ -135,8 +135,10 @@ def convert_to_mp4(resp: dict, bot_msg):
             mime = getattr(filetype.guess(path), "mime", "video/mp4")
             if mime in default_type:
                 if not can_convert_mp4(path, bot_msg.chat.id):
-                    logging.warning("Conversion abort for %s", bot_msg.chat.id)
-                    bot_msg._client.send_message(bot_msg.chat.id, "Can't convert your video to streaming format.")
+                    logging.warning("Conversion abort for non VIP %s", bot_msg.chat.id)
+                    bot_msg._client.send_message(
+                        bot_msg.chat.id,
+                        "You're not VIP, so you can't convert longer video to streaming formats.")
                     break
                 edit_text(bot_msg, f"{current_time()}: Converting {path.name} to mp4. Please wait.")
                 new_file_path = path.with_suffix(".mp4")
@@ -168,8 +170,6 @@ def run_ffmpeg(cmd_list, bm):
 
 
 def can_convert_mp4(video_path, uid):
-    if not ENABLE_FFMPEG:
-        return False
     if not ENABLE_VIP:
         return True
     video_streams = ffmpeg.probe(video_path, select_streams="v")
@@ -184,46 +184,40 @@ def can_convert_mp4(video_path, uid):
         return True
 
 
-def ytdl_download(url, tempdir, bm, **kwargs) -> dict:
+def ytdl_download(url, tempdir, bm) -> dict:
     chat_id = bm.chat.id
-    hijack = kwargs.get("hijack")
     response = {"status": True, "error": "", "filepath": []}
     output = pathlib.Path(tempdir, "%(title).70s.%(ext)s").as_posix()
     ydl_opts = {
         'progress_hooks': [lambda d: download_hook(d, bm)],
         'outtmpl': output,
         'restrictfilenames': False,
-        'quiet': True,
-        "proxy": os.getenv("YTDL_PROXY")
+        'quiet': True
     }
     formats = [
         "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio",
         "bestvideo[vcodec^=avc]+bestaudio[acodec^=mp4a]/best[vcodec^=avc]/best",
-        None
+        ""
     ]
-    adjust_formats(chat_id, url, formats, hijack)
+    adjust_formats(chat_id, url, formats)
     add_instagram_cookies(url, ydl_opts)
-
-    address = ["::", "0.0.0.0"] if IPv6 else [None]
-    for format_ in formats:
-        ydl_opts["format"] = format_
-        for addr in address:
-            # IPv6 goes first in each format
-            ydl_opts["source_address"] = addr
-            try:
-                logging.info("Downloading for %s with format %s", url, format_)
-                with ytdl.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([url])
-                response["status"] = True
-                response["error"] = ""
-                break
-            except Exception as e:
-                logging.error("Download failed for %s ", url)
-                response["status"] = False
-                response["error"] = str(e)
-
-        if response["status"]:
+    for f in formats:
+        if f:
+            ydl_opts["format"] = f
+        try:
+            logging.info("Downloading for %s with format %s", url, f)
+            with ytdl.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            response["status"] = True
+            response["error"] = ""
             break
+
+        except (ValueError, DownloadError) as e:
+            logging.error("Download failed for %s ", url)
+            response["status"] = False
+            response["error"] = str(e)
+        except Exception as e:
+            logging.error("UNKNOWN EXCEPTION: %s", e)
 
     logging.info("%s - %s", url, response)
     if response["status"] is False:
@@ -250,7 +244,7 @@ def ytdl_download(url, tempdir, bm, **kwargs) -> dict:
     if settings[2] == "video" or isinstance(settings[2], MagicMock):
         # only convert if send type is video
         convert_to_mp4(response, bm)
-    if settings[2] == "audio" or hijack == "bestaudio[ext=m4a]":
+    if settings[2] == "audio":
         convert_audio_format(response, bm)
     # disable it for now
     # split_large_video(response)
@@ -258,32 +252,11 @@ def ytdl_download(url, tempdir, bm, **kwargs) -> dict:
 
 
 def convert_audio_format(resp: "dict", bm):
-    # 1. file is audio, default format
-    # 2. file is video, default format
-    # 3. non default format
     if resp["status"]:
-        path: "pathlib.Path"
+        # all_converted = []
+        path: pathlib.PosixPath
         for path in resp["filepath"]:
-            streams = ffmpeg.probe(path)["streams"]
-            if (AUDIO_FORMAT is None and
-                    len(streams) == 1 and
-                    streams[0]["codec_type"] == "audio"):
-                logging.info("%s is audio, default format, no need to convert", path)
-            elif AUDIO_FORMAT is None and len(streams) >= 2:
-                logging.info("%s is video, default format, need to extract audio", path)
-                audio_stream = {"codec_name": "m4a"}
-                for stream in streams:
-                    if stream["codec_type"] == "audio":
-                        audio_stream = stream
-                        break
-                ext = audio_stream["codec_name"]
-                new_path = path.with_suffix(f".{ext}")
-                run_ffmpeg(["ffmpeg", "-y", "-i", path, "-vn", "-acodec", "copy", new_path], bm)
-                path.unlink()
-                index = resp["filepath"].index(path)
-                resp["filepath"][index] = new_path
-            else:
-                logging.info("Not default format, converting %s to %s", path, AUDIO_FORMAT)
+            if path.suffix != f".{AUDIO_FORMAT}":
                 new_path = path.with_suffix(f".{AUDIO_FORMAT}")
                 run_ffmpeg(["ffmpeg", "-y", "-i", path, '-ab','320k', new_path], bm)
                 path.unlink()
