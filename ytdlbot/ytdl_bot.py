@@ -143,6 +143,15 @@ def patch_handler(client: "Client", message: "types.Message"):
         hot_patch()
 
 
+@app.on_message(filters.command(["uncache"]))
+def patch_handler(client: "Client", message: "types.Message"):
+    username = message.from_user.username
+    link = message.text.split()[1]
+    if username == OWNER:
+        count = VIP().del_cache(link)
+        message.reply_text(f"{count} cache(s) deleted.", quote=True)
+
+
 @app.on_message(filters.command(["ping"]))
 def ping_handler(client: "Client", message: "types.Message"):
     chat_id = message.chat.id
@@ -152,7 +161,7 @@ def ping_handler(client: "Client", message: "types.Message"):
     else:
         bot_info = get_runtime("ytdlbot_ytdl_1", "YouTube-dl")
     if message.chat.username == OWNER:
-        stats = bot_text.ping_worker()
+        stats = bot_text.ping_worker()[:1000]
         client.send_document(chat_id, Redis().generate_file(), caption=f"{bot_info}\n\n{stats}")
     else:
         client.send_message(chat_id, f"{bot_info}")
@@ -177,7 +186,10 @@ def sub_count_handler(client: "Client", message: "types.Message"):
     username = message.from_user.username
     chat_id = message.chat.id
     if username == OWNER:
-        client.send_message(chat_id, VIP().sub_count())
+        with BytesIO() as f:
+            f.write(VIP().sub_count().encode("u8"))
+            f.name = "subscription count.txt"
+            client.send_document(chat_id, f)
 
 
 @app.on_message(filters.command(["direct"]))
@@ -322,24 +334,32 @@ def owner_local_callback(client: "Client", callback_query: types.CallbackQuery):
 
 def periodic_sub_check():
     vip = VIP()
+    exceptions = pyrogram.errors.exceptions
     for cid, uids in vip.group_subscriber().items():
         video_url = vip.has_newer_update(cid)
         if video_url:
             logging.info(f"periodic update:{video_url} - {uids}")
             for uid in uids:
-                bot_msg = app.send_message(uid, f"{video_url} is downloading...", disable_web_page_preview=True)
-                ytdl_download_entrance(bot_msg, app, video_url)
-                time.sleep(random.random())
+                try:
+                    bot_msg = app.send_message(uid, f"{video_url} is downloading...", disable_web_page_preview=True)
+                    ytdl_download_entrance(bot_msg, app, video_url)
+                except(exceptions.bad_request_400.PeerIdInvalid, exceptions.bad_request_400.UserIsBlocked) as e:
+                    logging.warning("User is blocked or deleted. %s", e)
+                    vip.deactivate_user_subscription(uid)
+                except Exception as e:
+                    logging.error("Unknown error when sending message to user. %s", traceback.format_exc())
+                finally:
+                    time.sleep(random.random() * 3)
 
 
 if __name__ == '__main__':
     MySQL()
-    scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
+    scheduler = BackgroundScheduler(timezone="Asia/Shanghai", job_defaults={'max_instances': 5})
     scheduler.add_job(Redis().reset_today, 'cron', hour=0, minute=0)
     scheduler.add_job(auto_restart, 'interval', seconds=5)
     scheduler.add_job(InfluxDB().collect_data, 'interval', seconds=60)
     #  default quota allocation of 10,000 units per day,
-    scheduler.add_job(periodic_sub_check, 'interval', seconds=60 * 30)
+    # scheduler.add_job(periodic_sub_check, 'interval', seconds=60 * 30)
     scheduler.start()
     banner = f"""
 ▌ ▌         ▀▛▘     ▌       ▛▀▖              ▜            ▌

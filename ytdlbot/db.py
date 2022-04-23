@@ -147,7 +147,7 @@ class Redis:
         return self.r.hget("cache", unique)
 
     def del_send_cache(self, unique):
-        self.r.hdel("cache", unique)
+        return self.r.hdel("cache", unique)
 
 
 class MySQL:
@@ -195,7 +195,8 @@ class MySQL:
     create table if not exists subscribe
     (
         user_id    bigint       null,
-        channel_id varchar(256) null
+        channel_id varchar(256) null,
+        is_valid boolean default 1 null
     ) CHARSET=utf8mb4;
     """
 
@@ -234,7 +235,10 @@ class InfluxDB:
         username = os.getenv("FLOWER_USERNAME", "benny")
         token = base64.b64encode(f"{username}:{password}".encode()).decode()
         headers = {"Authorization": f"Basic {token}"}
-        return requests.get("https://celery.dmesg.app/dashboard?json=1", headers=headers).json()
+        r = requests.get("https://celery.dmesg.app/dashboard?json=1", headers=headers)
+        if r.status_code != 200:
+            return dict(data=[])
+        return r.json()
 
     def extract_dashboard_data(self):
         self.data = self.get_worker_data()
@@ -298,6 +302,9 @@ class InfluxDB:
         self.client.write_points(json_body)
 
     def collect_data(self):
+        if os.getenv("INFLUX_HOST") is None:
+            return
+
         with contextlib.suppress(Exception):
             self.data = self.get_worker_data()
             self.__fill_worker_data()
