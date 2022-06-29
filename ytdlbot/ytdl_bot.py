@@ -156,15 +156,7 @@ def patch_handler(client: "Client", message: "types.Message"):
 def ping_handler(client: "Client", message: "types.Message"):
     chat_id = message.chat.id
     client.send_chat_action(chat_id, "typing")
-    if os.uname().sysname == "Darwin" or ".heroku" in os.getenv("PYTHONHOME", ""):
-        bot_info = "ping unavailable."
-    else:
-        bot_info = get_runtime("ytdlbot_ytdl_1", "YouTube-dl")
-    if message.chat.username == OWNER:
-        stats = bot_text.ping_worker()[:1000]
-        client.send_document(chat_id, Redis().generate_file(), caption=f"{bot_info}\n\n{stats}")
-    else:
-        client.send_message(chat_id, f"{bot_info}")
+    client.send_message(chat_id, f"Pong")
 
 
 @app.on_message(filters.command(["about"]))
